@@ -431,3 +431,68 @@ export async function createAIInsight(data: any) {
   
   return await db.insert(aiInsights).values(data);
 }
+
+// ============================================================================
+// ORDER QUERIES
+// ============================================================================
+
+import { orders, importLogs, clientDuplicates } from "../drizzle/schema";
+
+export async function getAllOrders() {
+  const db = await getDb();
+  if (!db) return [];
+  return await db.select().from(orders).orderBy(desc(orders.issueDate));
+}
+
+export async function getOrdersByClient(clientId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return await db.select().from(orders).where(eq(orders.clientId, clientId)).orderBy(desc(orders.issueDate));
+}
+
+export async function getOrdersByRepresentative(representativeId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return await db.select().from(orders).where(eq(orders.representativeId, representativeId)).orderBy(desc(orders.issueDate));
+}
+
+export async function createOrder(data: any) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return await db.insert(orders).values(data);
+}
+
+export async function updateOrder(id: number, data: any) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return await db.update(orders).set(data).where(eq(orders.id, id));
+}
+
+// ============================================================================
+// IMPORT LOG QUERIES
+// ============================================================================
+
+export async function getAllImportLogs() {
+  const db = await getDb();
+  if (!db) return [];
+  return await db.select().from(importLogs).orderBy(desc(importLogs.createdAt));
+}
+
+// ============================================================================
+// DUPLICATE QUERIES
+// ============================================================================
+
+export async function getClientDuplicates() {
+  const db = await getDb();
+  if (!db) return [];
+  return await db.select().from(clientDuplicates).where(eq(clientDuplicates.isResolved, false));
+}
+
+export async function resolveDuplicate(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return await db.update(clientDuplicates).set({ 
+    isResolved: true, 
+    resolvedAt: new Date() 
+  }).where(eq(clientDuplicates.id, id));
+}

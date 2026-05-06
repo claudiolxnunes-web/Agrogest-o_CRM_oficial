@@ -77,6 +77,8 @@ export const clients = mysqlTable("clients", {
   city: varchar("city", { length: 100 }),
   state: varchar("state", { length: 2 }),
   zipCode: varchar("zipCode", { length: 10 }),
+  cnpj: varchar("cnpj", { length: 20 }),
+  cpf: varchar("cpf", { length: 14 }),
   latitude: decimal("latitude", { precision: 10, scale: 8 }),
   longitude: decimal("longitude", { precision: 11, scale: 8 }),
   region: varchar("region", { length: 100 }).notNull(),
@@ -282,3 +284,76 @@ export const salesItems = mysqlTable("salesItems", {
 
 export type SalesItem = typeof salesItems.$inferSelect;
 export type InsertSalesItem = typeof salesItems.$inferInsert;
+
+/**
+ * Orders - Pedidos em carteira
+ */
+export const orders = mysqlTable("orders", {
+  id: int("id").autoincrement().primaryKey(),
+  orderNumber: varchar("orderNumber", { length: 50 }).notNull().unique(),
+  clientId: int("clientId").notNull(),
+  representativeId: int("representativeId").notNull(),
+  productName: varchar("productName", { length: 255 }).notNull(),
+  quantity: decimal("quantity", { precision: 15, scale: 4 }).notNull(),
+  unitPrice: decimal("unitPrice", { precision: 15, scale: 2 }).notNull(),
+  totalValue: decimal("totalValue", { precision: 15, scale: 2 }).notNull(),
+  status: mysqlEnum("status", ["pendente", "em_producao", "faturado", "entregue", "cancelado"]).default("pendente").notNull(),
+  issueDate: date("issueDate").notNull(),
+  expectedDeliveryDate: date("expectedDeliveryDate"),
+  actualDeliveryDate: date("actualDeliveryDate"),
+  importLogId: int("importLogId"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  clientIdIdx: index("order_client_idx").on(table.clientId),
+  representativeIdIdx: index("order_rep_idx").on(table.representativeId),
+  statusIdx: index("order_status_idx").on(table.status),
+  orderNumberIdx: index("order_number_idx").on(table.orderNumber),
+}));
+
+export type Order = typeof orders.$inferSelect;
+export type InsertOrder = typeof orders.$inferInsert;
+
+/**
+ * ImportLogs - Histórico de importações
+ */
+export const importLogs = mysqlTable("importLogs", {
+  id: int("id").autoincrement().primaryKey(),
+  fileName: varchar("fileName", { length: 255 }).notNull(),
+  importType: mysqlEnum("importType", ["clients", "orders"]).notNull(),
+  totalRows: int("totalRows").notNull(),
+  processedRows: int("processedRows").default(0),
+  successRows: int("successRows").default(0),
+  errorRows: int("errorRows").default(0),
+  duplicateRows: int("duplicateRows").default(0),
+  status: mysqlEnum("status", ["processing", "completed", "failed"]).default("processing").notNull(),
+  errorMessage: text("errorMessage"),
+  performedBy: int("performedBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({
+  statusIdx: index("import_status_idx").on(table.status),
+  typeIdx: index("import_type_idx").on(table.importType),
+}));
+
+export type ImportLog = typeof importLogs.$inferSelect;
+export type InsertImportLog = typeof importLogs.$inferInsert;
+
+/**
+ * ClientDuplicates - Registro de consolidação de duplicados
+ */
+export const clientDuplicates = mysqlTable("clientDuplicates", {
+  id: int("id").autoincrement().primaryKey(),
+  originalClientId: int("originalClientId").notNull(),
+  duplicateClientId: int("duplicateClientId").notNull(),
+  matchType: mysqlEnum("matchType", ["cnpj", "phone", "fuzzy_name"]).notNull(),
+  confidenceScore: decimal("confidenceScore", { precision: 5, scale: 2 }),
+  isResolved: boolean("isResolved").default(false).notNull(),
+  resolvedAt: timestamp("resolvedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({
+  originalClientIdx: index("dup_original_idx").on(table.originalClientId),
+  duplicateClientIdx: index("dup_duplicate_idx").on(table.duplicateClientId),
+}));
+
+export type ClientDuplicate = typeof clientDuplicates.$inferSelect;
+export type InsertClientDuplicate = typeof clientDuplicates.$inferInsert;

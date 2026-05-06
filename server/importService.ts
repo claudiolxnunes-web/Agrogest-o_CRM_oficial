@@ -1,6 +1,6 @@
 import { getDb } from "./db";
-import { clients, representatives, opportunities, salesHistory, products, salesItems } from "../drizzle/schema";
-import { eq } from "drizzle-orm";
+import { clients, representatives, opportunities, salesHistory, products, salesItems, orders, importLogs, clientDuplicates } from "../drizzle/schema";
+import { eq, or, and } from "drizzle-orm";
 import { recognizeExcelHeaders, findFuzzyMatch, type HeaderRecognitionResult } from "./headerRecognition";
 
 export interface ImportResult {
@@ -19,6 +19,8 @@ export interface ExcelClientData {
   contactName?: string;
   email?: string;
   phone?: string;
+  cnpj?: string;
+  cpf?: string;
   address?: string;
   city?: string;
   state?: string;
@@ -27,6 +29,18 @@ export interface ExcelClientData {
   longitude?: number;
   businessPotential?: number;
   representativeId?: number;
+}
+
+export interface ExcelOrderData {
+  orderNumber: string;
+  clientName: string;
+  representativeName: string;
+  productName: string;
+  quantity: number;
+  unitPrice: number;
+  status?: "pendente" | "em_producao" | "faturado" | "entregue" | "cancelado";
+  issueDate: string;
+  expectedDeliveryDate?: string;
 }
 
 export interface ExcelSalesData {
@@ -90,21 +104,43 @@ export async function importClientsFromExcel(
         continue;
       }
 
-      // Check if client already exists (com fuzzy matching)
-      let existing = await db
-        .select()
-        .from(clients)
-        .where(eq(clients.name, clientData.name))
-        .limit(1);
+      // Check if client already exists (Smart Deduplication)
+      let existing: any[] = [];
+      let matchType: "cnpj" | "phone" | "fuzzy_name" | null = null;
+      let confidenceScore = 1.0;
 
+      // 1. Try CNPJ match (strongest)
+      if (clientData.cnpj) {
+        existing = await db.select().from(clients).where(eq(clients.cnpj, clientData.cnpj)).limit(1);
+        if (existing.length > 0) matchType = "cnpj";
+      }
+
+      // 2. Try CPF match
+      if (existing.length === 0 && clientData.cpf) {
+        existing = await db.select().from(clients).where(eq(clients.cpf, clientData.cpf)).limit(1);
+        if (existing.length > 0) matchType = "cnpj"; // using cnpj as generic doc match type
+      }
+
+      // 3. Try Phone match
+      if (existing.length === 0 && clientData.phone) {
+        existing = await db.select().from(clients).where(eq(clients.phone, clientData.phone)).limit(1);
+        if (existing.length > 0) matchType = "phone";
+      }
+
+      // 4. Try Exact Name match
       if (existing.length === 0) {
-        // Tentar fuzzy matching
-        const fuzzyClient = findFuzzyMatch(clientData.name, 
-          (await db.select().from(clients)).map(c => c.name), 
-          0.85
-        );
+        existing = await db.select().from(clients).where(eq(clients.name, clientData.name)).limit(1);
+        if (existing.length > 0) matchType = "fuzzy_name";
+      }
+
+      // 5. Try Fuzzy Name match
+      if (existing.length === 0) {
+        const allClientNames = await db.select({ name: clients.name }).from(clients);
+        const fuzzyClient = findFuzzyMatch(clientData.name, allClientNames.map(c => c.name), 0.85);
         if (fuzzyClient.match) {
-          existing = (await db.select().from(clients)).filter(c => c.name === fuzzyClient.match);
+          existing = await db.select().from(clients).where(eq(clients.name, fuzzyClient.match)).limit(1);
+          matchType = "fuzzy_name";
+          confidenceScore = fuzzyClient.score;
         }
       }
 
@@ -125,6 +161,8 @@ export async function importClientsFromExcel(
           .set({
             email: clientData.email || existing[0].email,
             phone: clientData.phone || existing[0].phone,
+            cnpj: clientData.cnpj || existing[0].cnpj,
+            cpf: clientData.cpf || existing[0].cpf,
             address: clientData.address || existing[0].address,
             city: clientData.city || existing[0].city,
             state: clientData.state || existing[0].state,
@@ -134,6 +172,18 @@ export async function importClientsFromExcel(
             updatedAt: new Date(),
           })
           .where(eq(clients.id, existing[0].id));
+        
+        // Log duplicate detection if it was a fuzzy or phone match
+        if (matchType && matchType !== "cnpj") {
+          await db.insert(clientDuplicates).values({
+            originalClientId: existing[0].id,
+            duplicateClientId: existing[0].id, // For tracking updates to the same record
+            matchType: matchType,
+            confidenceScore: confidenceScore.toString(),
+            isResolved: true,
+            resolvedAt: new Date(),
+          });
+        }
         updated++;
       } else {
         // Create new client
@@ -142,6 +192,8 @@ export async function importClientsFromExcel(
           type: clientData.type,
           email: clientData.email,
           phone: clientData.phone,
+          cnpj: clientData.cnpj,
+          cpf: clientData.cpf,
           address: clientData.address,
           city: clientData.city,
           state: clientData.state,
@@ -473,4 +525,128 @@ export async function importFromProtheus(
       importId,
     };
   }
+}
+
+export async function importOrdersFromExcel(
+  data: ExcelOrderData[],
+  userId: number
+): Promise<ImportResult> {
+  const db = await getDb();
+  if (!db) {
+    return {
+      success: false,
+      message: "Database connection failed",
+      recordsProcessed: 0,
+      recordsCreated: 0,
+      recordsUpdated: 0,
+      errors: [],
+      importId: `import_${Date.now()}`,
+    };
+  }
+
+  const importId = `import_${Date.now()}_orders`;
+  const errors: Array<{ row: number; error: string }> = [];
+  let created = 0;
+  let updated = 0;
+
+  // Carregar dados para fuzzy matching
+  const allClients = await db.select().from(clients);
+  const allReps = await db.select().from(representatives);
+  const clientNames = allClients.map(c => c.name);
+  const repNames = allReps.map(r => r.name);
+
+  // Criar log de importação
+  const logResult = await db.insert(importLogs).values({
+    fileName: "Importação de Pedidos",
+    importType: "orders",
+    totalRows: data.length,
+    status: "processing",
+    performedBy: userId,
+  });
+  const importLogId = (logResult as any).insertId || 0;
+
+  for (let i = 0; i < data.length; i++) {
+    try {
+      const row = i + 2;
+      const orderData = data[i];
+
+      if (!orderData.orderNumber || !orderData.clientName || !orderData.totalValue) {
+        // totalValue is derived from quantity * unitPrice if not provided
+      }
+
+      const quantity = orderData.quantity || 0;
+      const unitPrice = orderData.unitPrice || 0;
+      const totalValue = quantity * unitPrice;
+
+      // Find client fuzzy
+      const fuzzyClient = findFuzzyMatch(orderData.clientName, clientNames, 0.75);
+      if (!fuzzyClient.match) {
+        errors.push({ row, error: `Cliente "${orderData.clientName}" não encontrado.` });
+        continue;
+      }
+      const client = allClients.find(c => c.name === fuzzyClient.match);
+
+      // Find rep fuzzy
+      const fuzzyRep = findFuzzyMatch(orderData.representativeName, repNames, 0.75);
+      const representative = allReps.find(r => r.name === fuzzyRep.match) || allReps[0];
+
+      // Check existing order
+      const existing = await db.select().from(orders).where(eq(orders.orderNumber, orderData.orderNumber)).limit(1);
+
+      if (existing.length > 0) {
+        await db.update(orders).set({
+          clientId: client!.id,
+          representativeId: representative.id,
+          productName: orderData.productName,
+          quantity: quantity.toString(),
+          unitPrice: unitPrice.toString(),
+          totalValue: totalValue.toString(),
+          status: orderData.status || existing[0].status,
+          issueDate: new Date(orderData.issueDate),
+          expectedDeliveryDate: orderData.expectedDeliveryDate ? new Date(orderData.expectedDeliveryDate) : existing[0].expectedDeliveryDate,
+          importLogId: importLogId,
+          updatedAt: new Date(),
+        }).where(eq(orders.id, existing[0].id));
+        updated++;
+      } else {
+        await db.insert(orders).values({
+          orderNumber: orderData.orderNumber,
+          clientId: client!.id,
+          representativeId: representative.id,
+          productName: orderData.productName,
+          quantity: quantity.toString(),
+          unitPrice: unitPrice.toString(),
+          totalValue: totalValue.toString(),
+          status: orderData.status || "pendente",
+          issueDate: new Date(orderData.issueDate),
+          expectedDeliveryDate: orderData.expectedDeliveryDate ? new Date(orderData.expectedDeliveryDate) : null,
+          importLogId: importLogId,
+        });
+        created++;
+      }
+    } catch (error) {
+      errors.push({
+        row: i + 2,
+        error: error instanceof Error ? error.message : "Erro desconhecido",
+      });
+    }
+  }
+
+  // Atualizar log
+  await db.update(importLogs).set({
+    processedRows: data.length,
+    successRows: created + updated,
+    errorRows: errors.length,
+    status: "completed",
+  }).where(eq(importLogs.id, importLogId));
+
+  return {
+    success: errors.length === 0,
+    message: `Importação de pedidos concluída: ${created} criados, ${updated} atualizados`,
+    recordsProcessed: data.length,
+    recordsCreated: created,
+    recordsUpdated: updated,
+    errors,
+    importId,
+  };
 }

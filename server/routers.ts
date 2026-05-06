@@ -449,6 +449,8 @@ export const appRouter = router({
   ai: aiRouter,
   email: emailRouter,
   admin: adminRouter,
+  orders: ordersRouter,
+  import: importRouter,
 });
 
 export type AppRouter = typeof appRouter;

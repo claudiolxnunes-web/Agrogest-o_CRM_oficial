@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 interface ImportLog {
   id: string;
-  type: "clients" | "sales" | "products";
+  type: "clients" | "sales" | "products" | "orders";
   filename: string;
   timestamp: Date;
   status: "success" | "error" | "pending";
@@ -31,7 +31,7 @@ export default function DataImport() {
     company: "",
   });
 
-  const handleImportComplete = (type: "clients" | "sales" | "products") => (result: any) => {
+  const handleImportComplete = (type: "clients" | "sales" | "products" | "orders") => (result: any) => {
     const newLog: ImportLog = {
       id: `import_${Date.now()}`,
       type,
@@ -71,8 +71,9 @@ export default function DataImport() {
 
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-5">
             <TabsTrigger value="clients">Clientes</TabsTrigger>
+            <TabsTrigger value="orders">Pedidos</TabsTrigger>
             <TabsTrigger value="sales">Vendas</TabsTrigger>
             <TabsTrigger value="products">Produtos</TabsTrigger>
             <TabsTrigger value="protheus">Protheus</TabsTrigger>
@@ -82,12 +83,25 @@ export default function DataImport() {
           <TabsContent value="clients" className="space-y-4">
             <Alert className="bg-blue-50 border-blue-200">
               <AlertDescription>
-                <strong>IA Inteligente:</strong> O sistema reconhecerá automaticamente os cabeçalhos do seu Excel e mapeará as colunas para os campos corretos.
+                <strong>IA Inteligente:</strong> O sistema reconhecerá automaticamente os cabeçalhos do seu Excel e mapeará as colunas para os campos corretos. Deduplicação inteligente por CNPJ e Telefone habilitada.
               </AlertDescription>
             </Alert>
             <SmartImportExcel 
               importType="clients" 
               onImportComplete={handleImportComplete("clients")}
+            />
+          </TabsContent>
+
+          {/* Pedidos */}
+          <TabsContent value="orders" className="space-y-4">
+            <Alert className="bg-blue-50 border-blue-200">
+              <AlertDescription>
+                <strong>Pedidos em Carteira:</strong> Importe pedidos para acompanhamento de produção e entrega.
+              </AlertDescription>
+            </Alert>
+            <SmartImportExcel 
+              importType="orders" 
+              onImportComplete={handleImportComplete("orders")}
             />
           </TabsContent>
 

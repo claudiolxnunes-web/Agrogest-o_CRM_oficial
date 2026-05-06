@@ -27,6 +27,8 @@ import DataImport from "./pages/DataImport";
 import DashboardEnhanced from "./pages/DashboardEnhanced";
 import AdvancedAnalytics from "./pages/AdvancedAnalytics";
 import AdminPanel from "./pages/AdminPanel";
+import Orders from "./pages/Orders";
+import PortfolioSnapshot from "./pages/PortfolioSnapshot";
 
 function Router() {
   const { isAuthenticated, loading } = useAuth();
@@ -263,6 +265,20 @@ function Router() {
             {() => (
               <DashboardLayout>
                 <DataImport />
+              </DashboardLayout>
+            )}
+          </Route>
+          <Route path={"/orders/*"}>
+            {() => (
+              <DashboardLayout>
+                <Orders />
+              </DashboardLayout>
+            )}
+          </Route>
+          <Route path={"/portfolio-snapshot/*"}>
+            {() => (
+              <DashboardLayout>
+                <PortfolioSnapshot />
               </DashboardLayout>
             )}
           </Route>

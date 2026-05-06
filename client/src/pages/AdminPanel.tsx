@@ -43,8 +43,9 @@ export default function AdminPanel() {
 
         {/* Tabs */}
         <Tabs defaultValue="database" className="w-full">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="database">Banco de Dados</TabsTrigger>
+            <TabsTrigger value="duplicates">Duplicados</TabsTrigger>
             <TabsTrigger value="system">Sistema</TabsTrigger>
             <TabsTrigger value="logs">Logs</TabsTrigger>
           </TabsList>
@@ -162,6 +163,33 @@ export default function AdminPanel() {
                     <Trash2 className="w-4 h-4 mr-2" />
                     Limpar Base de Dados
                   </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Aba: Duplicados */}
+          <TabsContent value="duplicates" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Shield className="w-5 h-5" />
+                  Limpeza de Clientes Duplicados
+                </CardTitle>
+                <CardDescription>
+                  Gerencie clientes identificados como possíveis duplicados durante a importação inteligente
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Alert className="mb-4 bg-blue-50 border-blue-200">
+                  <AlertDescription>
+                    A deduplicação inteligente utiliza <strong>CNPJ</strong>, <strong>Telefone</strong> e <strong>Fuzzy Match</strong> de nomes para identificar registros repetidos.
+                  </AlertDescription>
+                </Alert>
+                
+                <div className="text-center py-8 text-gray-500 border-2 border-dashed rounded-lg">
+                  <p>Nenhum duplicado pendente de revisão no momento.</p>
+                  <p className="text-sm mt-2">Novos registros são analisados automaticamente durante a importação.</p>
                 </div>
               </CardContent>
             </Card>

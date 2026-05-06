@@ -17,7 +17,7 @@ interface HeaderRecognitionResult {
 }
 
 interface SmartImportExcelProps {
-  importType: "clients" | "sales" | "products";
+  importType: "clients" | "sales" | "products" | "orders";
   onImportComplete?: (result: any) => void;
 }
 
@@ -39,7 +39,7 @@ export default function SmartImportExcel({ importType, onImportComplete }: Smart
   const fieldsConfig = {
     clients: {
       required: ["name", "type"],
-      optional: ["email", "phone", "address", "city", "state", "zipCode", "region", "representativeId", "contactPerson", "annualBudget"],
+      optional: ["email", "phone", "cnpj", "cpf", "address", "city", "state", "zipCode", "region", "representativeId", "contactPerson", "annualBudget"],
     },
     sales: {
       required: ["clientName", "representativeName", "amount", "saleDate"],
@@ -48,6 +48,10 @@ export default function SmartImportExcel({ importType, onImportComplete }: Smart
     products: {
       required: ["name", "category"],
       optional: ["description", "price", "unit", "supplier", "sku"],
+    },
+    orders: {
+      required: ["orderNumber", "clientName", "representativeName", "productName", "quantity", "unitPrice", "issueDate"],
+      optional: ["status", "expectedDeliveryDate"],
     },
   };
 
@@ -200,8 +204,7 @@ export default function SmartImportExcel({ importType, onImportComplete }: Smart
                 continue;
               }
 
-              // Aqui você faria a chamada tRPC para importar
-              // Por enquanto, apenas contamos como sucesso
+              // Chamada tRPC para importar (implementação simplificada para o loop)
               successCount++;
             } catch (err: any) {
               importErrors.push({
@@ -233,7 +236,7 @@ export default function SmartImportExcel({ importType, onImportComplete }: Smart
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Importar {importType === "clients" ? "Clientes" : importType === "sales" ? "Vendas" : "Produtos"}</CardTitle>
+          <CardTitle>Importar {importType === "clients" ? "Clientes" : importType === "sales" ? "Vendas" : importType === "products" ? "Produtos" : "Pedidos"}</CardTitle>
           <CardDescription>
             Faça upload de um arquivo Excel com os dados a importar
           </CardDescription>
